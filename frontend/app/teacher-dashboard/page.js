@@ -17,6 +17,9 @@ const ALL_SEMESTERS = [
   "5th Semester", "6th Semester", "7th Semester", "8th Semester"
 ];
 
+// Backend URL for fetching data from Cloud DB
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://assignment-evaluator-14ie.onrender.com';
+
 export default function TeacherDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('Active Sessions');
@@ -59,18 +62,31 @@ export default function TeacherDashboard() {
     }
     
     setTeacherEmail(email);
-
-    const allSessions = JSON.parse(localStorage.getItem('ai_eval_sessions')) || [];
-    const filteredSessions = allSessions.filter(session => session.teacherId === email).reverse();
-    setMySessions(filteredSessions);
-
-    const mySessionIds = filteredSessions.map(s => s.id);
-    const allSubmissions = JSON.parse(localStorage.getItem('ai_eval_submissions')) || [];
-    const filteredSubmissions = allSubmissions.filter(sub => mySessionIds.includes(sub.id)).reverse();
-    setMyVault(filteredSubmissions);
-
-    setLoading(false);
+    fetchDashboardData(email);
   }, [router]);
+
+  // --- NEW: Function to Fetch Data from Cloud DB ---
+  const fetchDashboardData = async (email) => {
+      try {
+          // Fetch Sessions
+          const sessRes = await fetch(`${BACKEND_URL}/api/sessions/${email}`);
+          if (sessRes.ok) {
+              const sessionsData = await sessRes.json();
+              setMySessions(sessionsData);
+          }
+
+          // Fetch Submissions (Vault)
+          const subRes = await fetch(`${BACKEND_URL}/api/submissions/${email}`);
+          if (subRes.ok) {
+              const submissionsData = await subRes.json();
+              setMyVault(submissionsData);
+          }
+      } catch (error) {
+          console.error("Failed to load dashboard data from cloud:", error);
+      } finally {
+          setLoading(false);
+      }
+  };
 
   const handleLogout = () => { 
       localStorage.removeItem('token');
@@ -80,7 +96,8 @@ export default function TeacherDashboard() {
       router.push('/auth'); 
   };
 
-  const generateSession = (e) => {
+  // --- NEW: Generate Session and Save to Cloud DB ---
+  const generateSession = async (e) => {
     e.preventDefault();
     const newCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     
@@ -95,16 +112,28 @@ export default function TeacherDashboard() {
       date: new Date().toLocaleDateString()
     };
 
-    const allSessions = JSON.parse(localStorage.getItem('ai_eval_sessions')) || [];
-    allSessions.push(newSession);
-    localStorage.setItem('ai_eval_sessions', JSON.stringify(allSessions));
+    try {
+        // Save to Backend Database
+        const response = await fetch(`${BACKEND_URL}/api/sessions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newSession)
+        });
 
-    setMySessions([newSession, ...mySessions]);
-    setShowCode(newCode);
-    setCopySuccess(false);
-    setSubject('');
-    setQuestionFile(null); 
-    setAnswerKeyFile(null); 
+        if (response.ok) {
+            setMySessions([newSession, ...mySessions]);
+            setShowCode(newCode);
+            setCopySuccess(false);
+            setSubject('');
+            setQuestionFile(null); 
+            setAnswerKeyFile(null); 
+        } else {
+            alert("Failed to save session to cloud. Please try again.");
+        }
+    } catch (error) {
+        console.error("Error saving session:", error);
+        alert("Network error while saving session.");
+    }
   };
 
   const handleCopyCode = () => {

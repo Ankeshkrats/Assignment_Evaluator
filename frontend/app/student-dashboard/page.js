@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link'; 
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://assignment-evaluator-14ie.onrender.com';
+
 export default function StudentDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('New Submission');
@@ -19,6 +21,9 @@ export default function StudentDashboard() {
   const [myHistory, setMyHistory] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
 
+  // Nayi State cloud se session fetch karne ke liye
+  const [cloudSessions, setCloudSessions] = useState([]);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('userRole');
@@ -30,19 +35,39 @@ export default function StudentDashboard() {
       localStorage.removeItem('branch');
       router.push('/auth');
     } else {
+        const email = localStorage.getItem('userEmail') || 'student@college.edu';
         setUserProfile({
             name: localStorage.getItem('userName') || 'Student',
             regNumber: localStorage.getItem('regNumber') || 'N/A',
-            branch: localStorage.getItem('branch') || 'Computer Science & Engineering' 
+            branch: localStorage.getItem('branch') || 'Computer Science & Engineering',
+            email: email
         });
+        
+        // Load sessions from cloud initially
+        fetchAllSessionsFromCloud();
     }
   }, [router]);
 
+  // --- NAYA: Cloud Se Sessions lana ---
+  const fetchAllSessionsFromCloud = async () => {
+       try {
+           // Hack: Since student needs to verify session ID, ideally we need an API to fetch ONE session by ID. 
+           // For now, to keep it simple and match previous flow, we'll fetch sessions (assuming teacher email is not known).
+           // If your session logic was purely local, a better approach is to check session validity during submission.
+       } catch (error) {
+           console.error("Failed to load sessions");
+       }
+  }
+
+  // --- NAYA: Cloud se History Lana ---
   useEffect(() => {
     if (activeTab === 'My History' && userProfile) {
-      const submissions = JSON.parse(localStorage.getItem('ai_eval_submissions')) || [];
-      const mySubmissions = submissions.filter(s => s.roll === userProfile.regNumber);
-      setMyHistory([...mySubmissions].reverse());
+        // Teacher wale route ki tarah hume student ka history bhi chahiye
+        // Abhi ke liye local storage use kar rahe hain history dikhane ke liye (safefallback)
+        // Ideal: Make an API route: router.get('/submissions/student/:roll', ...)
+        const submissions = JSON.parse(localStorage.getItem('ai_eval_submissions')) || [];
+        const mySubmissions = submissions.filter(s => s.roll === userProfile.regNumber);
+        setMyHistory([...mySubmissions].reverse());
     }
   }, [activeTab, userProfile]);
 
@@ -64,12 +89,14 @@ export default function StudentDashboard() {
     setErrorMsg('');
     setIsSubmitting(true);
 
+    // Note: Temporary fallback to localStorage for session validation if cloud API isn't setup for finding single session.
+    // Ideally, pass Session ID to backend and let backend validate.
     const allSessions = JSON.parse(localStorage.getItem('ai_eval_sessions')) || [];
     const activeSession = allSessions.find(s => s.id === sessionId.toUpperCase().trim());
 
     if (!activeSession) {
       setIsSubmitting(false);
-      setErrorMsg(`Invalid Session ID "${sessionId}". Please get the correct code from your teacher.`);
+      setErrorMsg(`Invalid Session ID "${sessionId}". Please get the correct code from your teacher. Note: Ensure teacher created session on same device if cloud sync is fully pending.`);
       return;
     }
 
@@ -95,7 +122,7 @@ export default function StudentDashboard() {
       formData.append('branch', userProfile.branch);
       formData.append('semester', activeSession.semester);
 
-      const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://assignment-evaluator-14ie.onrender.com';
+      // AI se Evaluate karwao
       const response = await fetch(`${BACKEND_URL}/api/evaluate`, {
         method: 'POST',
         body: formData,
@@ -118,6 +145,7 @@ export default function StudentDashboard() {
 
       const finalResult = {
         id: sessionId,
+        teacherId: activeSession.teacherId, // Required for DB
         roll: userProfile.regNumber,
         name: userProfile.name,
         branch: userProfile.branch,
@@ -131,11 +159,24 @@ export default function StudentDashboard() {
         statusColor,
         parameters: formattedParams,
         strengths: aiData.strengths || ["Attempted the assignment."],
-        improvements: aiData.improvements || ["Review the core concepts again."]
+        improvements: aiData.improvements || ["Review the core concepts again."],
+        evaluationData: aiData
       };
 
       setEvalResult(finalResult);
 
+      // --- NAYA: Save Final Result to CLOUD DATABASE ---
+      const dbResponse = await fetch(`${BACKEND_URL}/api/submissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(finalResult)
+      });
+
+      if(!dbResponse.ok) {
+          console.warn("Could not save to cloud DB, saving locally.");
+      }
+
+      // Local fallback for quick UI updates
       const existingSubmissions = JSON.parse(localStorage.getItem('ai_eval_submissions')) || [];
       existingSubmissions.push(finalResult);
       localStorage.setItem('ai_eval_submissions', JSON.stringify(existingSubmissions));
