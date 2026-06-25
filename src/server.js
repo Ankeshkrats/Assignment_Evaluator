@@ -12,8 +12,13 @@ connectDB();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ✅ FIXED CORS: Added Vercel Live Link
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: [
+        'http://localhost:3000', 
+        'http://127.0.0.1:3000',
+        'https://assignment-evaluator-ten.vercel.app' 
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
@@ -81,7 +86,6 @@ app.post('/api/evaluate', upload.single('assignment'), async (req, res) => {
 
         const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-        // ✅ FIXED - closing bracket is now correct
         const GROQ_MODELS = [
             "llama3-8b-8192",
             "llama3-70b-8192",
