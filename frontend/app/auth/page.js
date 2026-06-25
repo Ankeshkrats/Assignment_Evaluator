@@ -59,9 +59,10 @@ export default function AuthPage() {
     setLoading(true);
     setMsg({ type: '', text: '' });
 
+    const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://assignment-evaluator-14ie.onrender.com';
     const url = isLogin 
-      ? 'http://localhost:5000/api/auth/login' 
-      : 'http://localhost:5000/api/auth/register';
+      ? `${BACKEND_URL}/api/auth/login` 
+      : `${BACKEND_URL}/api/auth/register`;
 
     const payload = isLogin 
       ? { email: formData.email, password: formData.password }

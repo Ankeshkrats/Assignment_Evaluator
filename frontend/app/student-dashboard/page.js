@@ -95,7 +95,8 @@ export default function StudentDashboard() {
       formData.append('branch', userProfile.branch);
       formData.append('semester', activeSession.semester);
 
-      const response = await fetch('http://localhost:5000/api/evaluate', {
+      const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://assignment-evaluator-14ie.onrender.com';
+      const response = await fetch(`${BACKEND_URL}/api/evaluate`, {
         method: 'POST',
         body: formData,
       });
