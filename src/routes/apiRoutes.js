@@ -49,6 +49,20 @@ router.get('/sessions/:email', async (req, res) => {
     }
 });
 
+// 🌟 NAYA ROUTE: STUDENT KE LIYE SESSION VERIFY KARNA (CLOUD SYNC)
+router.get('/session/verify/:id', async (req, res) => {
+    try {
+        const session = await Session.findOne({ id: req.params.id });
+        if (session) {
+            res.status(200).json(session);
+        } else {
+            res.status(404).json({ error: "Session not found" });
+        }
+    } catch (error) {
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
 // 3. Student Ka Submission Save Karne Ke Liye
 router.post('/submissions', async (req, res) => {
     try {

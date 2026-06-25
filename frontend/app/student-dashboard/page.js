@@ -21,9 +21,6 @@ export default function StudentDashboard() {
   const [myHistory, setMyHistory] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
 
-  // Nayi State cloud se session fetch karne ke liye
-  const [cloudSessions, setCloudSessions] = useState([]);
-
   useEffect(() => {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('userRole');
@@ -42,29 +39,11 @@ export default function StudentDashboard() {
             branch: localStorage.getItem('branch') || 'Computer Science & Engineering',
             email: email
         });
-        
-        // Load sessions from cloud initially
-        fetchAllSessionsFromCloud();
     }
   }, [router]);
 
-  // --- NAYA: Cloud Se Sessions lana ---
-  const fetchAllSessionsFromCloud = async () => {
-       try {
-           // Hack: Since student needs to verify session ID, ideally we need an API to fetch ONE session by ID. 
-           // For now, to keep it simple and match previous flow, we'll fetch sessions (assuming teacher email is not known).
-           // If your session logic was purely local, a better approach is to check session validity during submission.
-       } catch (error) {
-           console.error("Failed to load sessions");
-       }
-  }
-
-  // --- NAYA: Cloud se History Lana ---
   useEffect(() => {
     if (activeTab === 'My History' && userProfile) {
-        // Teacher wale route ki tarah hume student ka history bhi chahiye
-        // Abhi ke liye local storage use kar rahe hain history dikhane ke liye (safefallback)
-        // Ideal: Make an API route: router.get('/submissions/student/:roll', ...)
         const submissions = JSON.parse(localStorage.getItem('ai_eval_submissions')) || [];
         const mySubmissions = submissions.filter(s => s.roll === userProfile.regNumber);
         setMyHistory([...mySubmissions].reverse());
@@ -89,30 +68,30 @@ export default function StudentDashboard() {
     setErrorMsg('');
     setIsSubmitting(true);
 
-    // Note: Temporary fallback to localStorage for session validation if cloud API isn't setup for finding single session.
-    // Ideally, pass Session ID to backend and let backend validate.
-    const allSessions = JSON.parse(localStorage.getItem('ai_eval_sessions')) || [];
-    const activeSession = allSessions.find(s => s.id === sessionId.toUpperCase().trim());
-
-    if (!activeSession) {
-      setIsSubmitting(false);
-      setErrorMsg(`Invalid Session ID "${sessionId}". Please get the correct code from your teacher. Note: Ensure teacher created session on same device if cloud sync is fully pending.`);
-      return;
-    }
-
-    if (activeSession.branch !== "All Branches" && activeSession.branch !== userProfile.branch) {
-      setIsSubmitting(false);
-      setErrorMsg(`Access Denied! This session is only for ${activeSession.branch} students. Your profile branch is ${userProfile.branch}.`);
-      return;
-    }
-
-    if (!assignmentFile) {
-      setIsSubmitting(false);
-      setErrorMsg("Please upload a PDF file.");
-      return;
-    }
-
     try {
+      // 🌟 NEW: VERIFY SESSION ID FROM CLOUD DATABASE DIRECTLY
+      const sessionResponse = await fetch(`${BACKEND_URL}/api/session/verify/${sessionId.toUpperCase().trim()}`);
+      
+      if (!sessionResponse.ok) {
+        setIsSubmitting(false);
+        setErrorMsg(`Invalid Session ID "${sessionId}". Please check the code with your teacher.`);
+        return;
+      }
+
+      const activeSession = await sessionResponse.json();
+
+      if (activeSession.branch !== "All Branches" && activeSession.branch !== userProfile.branch) {
+        setIsSubmitting(false);
+        setErrorMsg(`Access Denied! This session is only for ${activeSession.branch}.`);
+        return;
+      }
+
+      if (!assignmentFile) {
+        setIsSubmitting(false);
+        setErrorMsg("Please upload a PDF file.");
+        return;
+      }
+
       const formData = new FormData();
       formData.append('assignment', assignmentFile);
       formData.append('studentName', userProfile.name);
@@ -122,7 +101,6 @@ export default function StudentDashboard() {
       formData.append('branch', userProfile.branch);
       formData.append('semester', activeSession.semester);
 
-      // AI se Evaluate karwao
       const response = await fetch(`${BACKEND_URL}/api/evaluate`, {
         method: 'POST',
         body: formData,
@@ -144,8 +122,8 @@ export default function StudentDashboard() {
       }));
 
       const finalResult = {
-        id: sessionId,
-        teacherId: activeSession.teacherId, // Required for DB
+        id: sessionId.toUpperCase().trim(),
+        teacherId: activeSession.teacherId, 
         roll: userProfile.regNumber,
         name: userProfile.name,
         branch: userProfile.branch,
@@ -165,25 +143,21 @@ export default function StudentDashboard() {
 
       setEvalResult(finalResult);
 
-      // --- NAYA: Save Final Result to CLOUD DATABASE ---
+      // Save to CLOUD DB
       const dbResponse = await fetch(`${BACKEND_URL}/api/submissions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(finalResult)
       });
 
-      if(!dbResponse.ok) {
-          console.warn("Could not save to cloud DB, saving locally.");
-      }
-
-      // Local fallback for quick UI updates
+      // Local fallback
       const existingSubmissions = JSON.parse(localStorage.getItem('ai_eval_submissions')) || [];
       existingSubmissions.push(finalResult);
       localStorage.setItem('ai_eval_submissions', JSON.stringify(existingSubmissions));
 
     } catch (error) {
       console.error("Error:", error);
-      setErrorMsg(error.message || "Failed to connect to Groq AI Server.");
+      setErrorMsg(error.message || "Failed to connect to AI Server.");
     } finally {
       setIsSubmitting(false);
     }
@@ -215,7 +189,6 @@ export default function StudentDashboard() {
         </div>
 
         <div className="p-6 md:p-8 flex justify-between items-center">
-          {/* 🌟 LOGO NOW LINKS TO HOME PAGE */}
           <Link href="/" className="flex items-center gap-3 md:gap-4 hover:opacity-90 transition-opacity">
             <div className="bg-gradient-to-br from-violet-500 to-indigo-600 p-2 md:p-2.5 rounded-xl text-white shadow-lg">
               <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
@@ -230,8 +203,6 @@ export default function StudentDashboard() {
 
         <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col flex-1 px-4 md:px-6 pb-6 md:pb-0`}>
           <nav className="space-y-2 flex-1 mt-2 md:mt-4">
-            
-            {/* Mobile Only Home Button */}
             <Link href="/" className="md:hidden w-full flex items-center gap-4 px-4 py-3 rounded-xl font-bold text-sm transition-all text-slate-400 hover:bg-white/5 hover:text-white mb-2">
               <span className="text-lg">🏠</span>Home Page
             </Link>
